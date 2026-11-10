@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Friends Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+    <style>
+        html, body { height: 100%; overflow: hidden; }
+        #app { height: 100vh; height: 100dvh; }
+        /* iPhoneで入力時に画面が拡大されないよう16pxにする */
+        input, textarea { font-size: 16px !important; }
+        .safe-bottom { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
+
+    <div id="app" class="flex flex-col max-w-4xl mx-auto w-full p-2 sm:p-4">
+
+        <!-- ローディング -->
+        <div id="loading-screen" class="flex-1 flex flex-col justify-center items-center gap-4">
+            <div class="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-slate-400 text-sm animate-pulse">サーバーに接続中...</p>
+        </div>
+
+        <!-- ログイン / ルーム参加 -->
+        <div id="auth-screen" class="hidden flex-1 flex items-center justify-center p-4 overflow-y-auto">
+            <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl relative overflow-hidden">
+                <div class="absolute -top-12 -right-12 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                <div class="absolute -bottom-12 -left-12 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                <div class="text-center mb-8 relative z-10">
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600/20 text-indigo-400 mb-4 border border-indigo-500/30">
+                        <i data-lucide="message-square" class="w-8 h-8"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold text-white tracking-tight">Friends Chat</h1>
+                    <p class="text-slate-400 text-sm mt-1">友達とリアルタイムでつながるチャット</p>
+                </div>
+
+                <form id="join-form" class="space-y-5 relative z-10">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">ニックネーム</label>
+                        <input type="text" id="username-input" required maxlength="15" placeholder="名前を入力..."
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-white placeholder-slate-600">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">アイコン</label>
+                        <div id="avatar-selector" class="grid grid-cols-6 gap-2 bg-slate-950 border border-slate-800 rounded-xl p-2.5"></div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">ルームID</label>
+                        <input type="text" id="room-input" required maxlength="20" placeholder="例: friends-room"
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-white placeholder-slate-600">
+                        <p class="text-[11px] text-slate-500 mt-1.5">英数字・ハイフン(-)・アンダースコア(_)が使えます。同じIDの人と話せます</p>
+                    </div>
+
+                    <button type="submit" class="w-full bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-medium py-3.5 rounded-xl shadow-lg shadow-indigo-600/25 active:scale-[0.98] transition-all">
+                        チャットに参加する
+                    </button>
+                </form>
+
+                <div class="mt-6 pt-6 border-t border-slate-800/80 text-center relative z-10">
+                    <button type="button" id="random-room-btn" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium px-3 py-1.5 rounded-lg hover:bg-slate-800/50 transition-colors">
+                        ランダムなルームIDを作成
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- チャット画面 -->
+        <div id="chat-screen" class="hidden flex flex-1 min-h-0 flex-col bg-slate-900 border border-slate-800/80 rounded-3xl overflow-hidden shadow-2xl">
+            <div class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 p-3 sm:p-4 flex items-center justify-between shrink-0">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 shrink-0 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+                        <i data-lucide="hash" class="w-5 h-5"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <h2 id="current-room-name" class="font-bold text-white text-base truncate">ROOM</h2>
+                            <span class="text-[11px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>オンライン
+                            </span>
+                        </div>
+                        <p id="user-display-name" class="text-xs text-slate-400 truncate"></p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                    <button id="copy-room-btn" class="p-2.5 text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-xl text-xs font-medium active:scale-95 flex items-center gap-1.5" title="招待リンクをコピー">
+                        <i data-lucide="share-2" class="w-4 h-4 text-indigo-400"></i>
+                        <span class="hidden sm:inline">招待リンク</span>
+                    </button>
+                    <button id="leave-room-btn" class="p-2.5 text-red-400 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-xs font-medium active:scale-95 flex items-center gap-1.5" title="退室する">
+                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">退室</span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="messages-container" class="flex-1 min-h-0 overflow-y-auto p-4 bg-slate-950/40">
+                <div class="text-center py-8 text-slate-500 text-sm">メッセージを読み込んでいます...</div>
+            </div>
+
+            <div id="typing-indicator" class="h-6 px-4 flex items-center gap-2 text-xs text-indigo-400 font-medium opacity-0 transition-opacity duration-200 shrink-0">
+                <div class="flex space-x-1 items-center">
+                    <span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                    <span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                    <span class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></span>
+                </div>
+                <span id="typing-text"></span>
+            </div>
+
+            <div class="p-3 sm:p-4 bg-slate-900 border-t border-slate-800/80 shrink-0 safe-bottom">
+                <form id="message-form" class="flex gap-2 items-center">
+                    <input type="text" id="message-input" autocomplete="off" maxlength="500" placeholder="メッセージを入力..."
+                        class="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-white placeholder-slate-500">
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white p-3 rounded-xl shadow-lg shadow-indigo-600/20 active:scale-95 flex items-center justify-center">
+                        <i data-lucide="send" class="w-5 h-5"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知 -->
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 transition-all duration-300 bg-slate-800 border border-slate-700 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2 z-50 opacity-0 translate-y-20 pointer-events-none">
+        <span id="toast-icon" class="text-base">✅</span>
+        <span id="toast-message" class="text-sm font-medium"></span>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import {
+            getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import {
+            getFirestore, collection, doc, addDoc, setDoc, updateDoc, onSnapshot,
+            serverTimestamp, query, orderBy, limit, arrayUnion
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ★★★ ここをご自身のFirebaseコンソールの設定に置き換えてください ★★★
+        const MY_FIREBASE_CONFIG = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'friends-chat-app';
+        const firebaseConfig = (typeof __firebase_config !== 'undefined' && __firebase_config)
+            ? JSON.parse(__firebase_config)
+            : MY_FIREBASE_CONFIG;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        const MESSAGE_LIMIT = 100;     // 取得する最新メッセージ数
+        const MAX_TEXT_LENGTH = 500;
+        const TYPING_IDLE_MS = 2000;   // 入力を止めてから消えるまで
+        const TYPING_STALE_MS = 6000;  // これより古い入力中表示は無視
+
+        const AVATARS = ["🐶","🐱","🦊","🐼","🦁","🐰","🐻","🐯","🐨","🐸","🤖","👾","🚀","👑","🦄","⚽","🎮","🎵"];
+
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let currentRoomId = null;
+        let username = "";
+        let selectedAvatar = AVATARS[0];
+        let unsubscribeMessages = null;
+        let unsubscribeTyping = null;
+        let isTypingLocal = false;
+        let lastTypingWrite = 0;
+        let idleTimer = null;
+        let toastTimer = null;
+
+        const $ = (id) => document.getElementById(id);
+        const loadingScreen = $('loading-screen');
+        const authScreen = $('auth-screen');
+        const chatScreen = $('chat-screen');
+        const joinForm = $('join-form');
+        const usernameInput = $('username-input');
+        const roomInput = $('room-input');
+        const avatarSelector = $('avatar-selector');
+        const randomRoomBtn = $('random-room-btn');
+        const currentRoomName = $('current-room-name');
+        const userDisplayName = $('user-display-name');
+        const messagesContainer = $('messages-container');
+        const messageForm = $('message-form');
+        const messageInput = $('message-input');
+        const copyRoomBtn = $('copy-room-btn');
+        const leaveRoomBtn = $('leave-room-btn');
+        const typingIndicator = $('typing-indicator');
+        const typingText = $('typing-text');
+
+        const refreshIcons = () => { if (window.lucide) lucide.createIcons(); };
+        const escapeHtml = (str) => String(str ?? '')
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        const sanitizeRoomId = (s) => s.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 20);
+        const roomCol = (roomId, prefix = 'chat') =>
+            collection(db, 'artifacts', appId, 'public', 'data', `${prefix}_${roomId}`);
+
+        function showToast(message, type = "info") {
+            const toast = $('toast');
+            $('toast-message').textContent = message;
+            $('toast-icon').textContent = type === "error" ? "⚠️" : "✅";
+            toast.classList.remove('opacity-0', 'translate-y-20');
+            toast.classList.add('opacity-100', 'translate-y-0');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', 'translate-y-20');
+            }, 2500);
+        }
+
+        async function copyText(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                ta.setSelectionRange(0, text.length);
+                let ok = false;
+                try { ok = document.execCommand('copy'); } catch {}
+                document.body.removeChild(ta);
+                return ok;
+            }
+        }
+
+        function initAvatarSelector() {
+            avatarSelector.innerHTML = "";
+            AVATARS.forEach((emoji) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = emoji;
+                btn.className = 'avatar-btn h-10 text-xl flex items-center justify-center rounded-lg border transition-all';
+                btn.addEventListener('click', () => {
+                    selectedAvatar = emoji;
+                    markSelectedAvatar();
+                });
+                avatarSelector.appendChild(btn);
+            });
+            markSelectedAvatar();
+        }
+
+        function markSelectedAvatar() {
+            Array.from(avatarSelector.children).forEach((child) => {
+                const on = child.textContent === selectedAvatar;
+                child.className = `avatar-btn h-10 text-xl flex items-center justify-center rounded-lg border transition-all ${
+                    on ? 'bg-indigo-600/30 border-indigo-500 scale-105' : 'bg-slate-900 border-slate-800 hover:bg-slate-800'
+                }`;
+            });
+        }
+
+        async function init() {
+            initAvatarSelector();
+            refreshIcons();
+
+            if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_")) {
+                loadingScreen.classList.add('hidden');
+                authScreen.classList.remove('hidden');
+                showToast("Firebaseの設定が未入力です。MY_FIREBASE_CONFIGを書き換えてください", "error");
+                return;
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (initialAuthToken) {
+                    try { await signInWithCustomToken(auth, initialAuthToken); }
+                    catch { await signInAnonymously(auth); }
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (!user) return;
+                    currentUser = user;
+                    loadingScreen.classList.add('hidden');
+                    const urlRoom = new URLSearchParams(window.location.search).get('room');
+                    if (urlRoom) roomInput.value = sanitizeRoomId(urlRoom);
+                    authScreen.classList.remove('hidden');
+                });
+            } catch (err) {
+                console.error("Auth init error:", err);
+                loadingScreen.classList.add('hidden');
+                authScreen.classList.remove('hidden');
+                showToast("接続に失敗しました。Firebase設定を確認してください", "error");
+            }
+        }
+
+        randomRoomBtn.addEventListener('click', () => {
+            roomInput.value = 'room-' + Math.random().toString(36).substring(2, 8);
+        });
+
+        joinForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (!currentUser) {
+                showToast("接続中です。少し待ってから再度お試しください", "error");
+                return;
+            }
+            const name = usernameInput.value.trim();
+            const room = sanitizeRoomId(roomInput.value);
+            if (!name) return;
+            if (!room) {
+                showToast("ルームIDは英数字・-・_で入力してください", "error");
+                return;
+            }
+
+            username = name;
+            currentRoomId = room;
+
+            const url = new URL(window.location.href);
+            url.searchParams.set('room', room);
+            window.history.pushState({}, '', url);
+
+            authScreen.classList.add('hidden');
+            chatScreen.classList.remove('hidden');
+            currentRoomName.textContent = `#${room}`;
+            userDisplayName.textContent = `${selectedAvatar} ${username}`;
+
+            listenToMessages();
+            listenToTypingStatus();
+            messageInput.focus();
+        });
+
+        function listenToMessages() {
+            if (!currentUser || !currentRoomId || !db) return;
+            if (unsubscribeMessages) unsubscribeMessages();
+
+            const roomId = currentRoomId;
+            const q = query(roomCol(roomId), orderBy('timestamp', 'desc'), limit(MESSAGE_LIMIT));
+
+            unsubscribeMessages = onSnapshot(q, (snapshot) => {
+                const msgs = [];
+                snapshot.forEach((d) => {
+                    const data = d.data();
+                    msgs.push({ id: d.id, ...data });
+                    // 相手のメッセージを既読にする（arrayUnionで同時更新の競合を避ける）
+                    if (data.userId !== currentUser.uid && !(data.readBy || []).includes(currentUser.uid)) {
+                        updateDoc(doc(roomCol(roomId), d.id), { readBy: arrayUnion(currentUser.uid) })
+                            .catch((err) => console.error("既読更新エラー:", err));
+                    }
+                });
+                msgs.reverse();
+                renderMessages(msgs);
+            }, (error) => {
+                console.error("Snapshot error:", error);
+                showToast("メッセージ同期エラー", "error");
+            });
+        }
+
+        function renderMessages(messages) {
+            messagesContainer.innerHTML = "";
+
+            if (messages.length === 0) {
+                messagesContainer.innerHTML = `
+                    <div class="text-center py-16 text-slate-500">
+                        <div class="inline-flex p-3 rounded-2xl bg-slate-900 border border-slate-800 mb-3 text-slate-600">
+                            <i data-lucide="messages-square" class="w-8 h-8"></i>
+                        </div>
+                        <p class="text-sm font-medium">まだメッセージはありません</p>
+                        <p class="text-xs text-slate-600 mt-1">最初のメッセージを送ってみましょう！</p>
+                    </div>`;
+                refreshIcons();
+                return;
+            }
+
+            let lastSenderId = null;
+            messages.forEach((msg) => {
+                const isMe = msg.userId === currentUser.uid;
+                const time = new Date(msg.timestamp || Date.now())
+                    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const isRead = isMe && (msg.readBy || []).some((uid) => uid !== currentUser.uid);
+                // 各メッセージは送信時のアイコンで表示する
+                const avatar = escapeHtml(msg.avatar || '👤');
+
+                const wrapper = document.createElement('div');
+                wrapper.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'} mb-3`;
+
+                if (!isMe && lastSenderId !== msg.userId) {
+                    const head = document.createElement('div');
+                    head.className = 'flex items-center gap-1.5 mb-1 ml-1 text-xs';
+                    head.innerHTML = `<span class="text-base">${avatar}</span>
+                        <span class="text-indigo-400 font-medium">${escapeHtml(msg.senderName || '匿名')}</span>`;
+                    wrapper.appendChild(head);
+                }
+
+                const row = document.createElement('div');
+                row.className = `flex items-end gap-2 max-w-[85%] sm:max-w-[75%] ${isMe ? 'flex-row-reverse' : 'flex-row'}`;
+                row.innerHTML = `
+                    ${isMe ? `<div class="w-7 h-7 rounded-full bg-slate-800 border border-slate-700/60 flex items-center justify-center text-sm shrink-0 select-none">${avatar}</div>` : ''}
+                    <div class="bubble px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words whitespace-pre-wrap ${
+                        isMe ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10' : 'bg-slate-800 text-slate-100 border border-slate-700/60'
+                    }"></div>
+                    <div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} text-[10px] text-slate-500 shrink-0 select-none pb-0.5">
+                        ${isRead ? '<span class="text-indigo-400 font-semibold leading-none mb-0.5">既読</span>' : ''}
+                        <span class="leading-none">${time}</span>
+                    </div>`;
+                // 本文はtextContentで入れて、HTMLとして解釈されないようにする
+                row.querySelector('.bubble').textContent = msg.text || '';
+
+                wrapper.appendChild(row);
+                messagesContainer.appendChild(wrapper);
+                lastSenderId = msg.userId;
+            });
+
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = messageInput.value.trim();
+            if (!text || !currentRoomId || !db || !currentUser) return;
+            if (text.length > MAX_TEXT_LENGTH) {
+                showToast(`${MAX_TEXT_LENGTH}文字以内で入力してください`, "error");
+                return;
+            }
+
+            messageInput.value = "";
+            stopTyping();
+
+            try {
+                await addDoc(roomCol(currentRoomId), {
+                    text,
+                    userId: currentUser.uid,
+                    senderName: username,
+                    avatar: selectedAvatar,
+                    createdAt: serverTimestamp(),
+                    timestamp: Date.now(),
+                    readBy: [currentUser.uid]
+                });
+            } catch (err) {
+                console.error("Send message error:", err);
+                messageInput.value = text; // 失敗したら入力内容を戻す
+                showToast("送信に失敗しました", "error");
+            }
+        });
+
+        // ---- 入力中表示 ----
+        function writeTyping(flag) {
+            isTypingLocal = flag;
+            lastTypingWrite = Date.now();
+            if (!currentRoomId || !currentUser || !db) return;
+            setDoc(doc(roomCol(currentRoomId, 'typing'), currentUser.uid), {
+                username,
+                avatar: selectedAvatar,
+                isTyping: flag,
+                typingAt: Date.now()
+            }).catch((err) => console.error("Typing update error:", err));
+        }
+
+        function stopTyping() {
+            clearTimeout(idleTimer);
+            if (isTypingLocal) writeTyping(false);
+        }
+
+        messageInput.addEventListener('input', () => {
+            if (!currentRoomId) return;
+            // 書き込み回数を抑えるため、状態が変わったときか数秒ごとだけ送る
+            if (!isTypingLocal || Date.now() - lastTypingWrite > 4000) writeTyping(true);
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => writeTyping(false), TYPING_IDLE_MS);
+        });
+
+        // タブを閉じたときに「入力中」が残らないようにする
+        window.addEventListener('pagehide', () => { if (isTypingLocal) writeTyping(false); });
+
+        function listenToTypingStatus() {
+            if (!currentUser || !currentRoomId || !db) return;
+            if (unsubscribeTyping) unsubscribeTyping();
+
+            const roomId = currentRoomId;
+            unsubscribeTyping = onSnapshot(roomCol(roomId, 'typing'), (snapshot) => {
+                const now = Date.now();
+                const typingUsers = [];
+                snapshot.forEach((d) => {
+                    const data = d.data();
+                    const fresh = now - (data.typingAt || 0) < TYPING_STALE_MS;
+                    if (d.id !== currentUser.uid && data.isTyping && fresh) {
+                        typingUsers.push(`${data.avatar || ''} ${data.username || '誰か'}`);
+                    }
+                });
+
+                if (typingUsers.length > 0) {
+                    typingText.textContent = typingUsers.length === 1
+                        ? `${typingUsers[0]} が入力中...`
+                        : `${typingUsers.join(', ')} が入力中...`;
+                    typingIndicator.classList.remove('opacity-0');
+                    typingIndicator.classList.add('opacity-100');
+                } else {
+                    typingIndicator.classList.remove('opacity-100');
+                    typingIndicator.classList.add('opacity-0');
+                }
+            }, (err) => console.error("Typing snapshot error:", err));
+        }
+
+        copyRoomBtn.addEventListener('click', async () => {
+            if (!currentRoomId) return;
+            const url = new URL(window.location.href);
+            url.searchParams.set('room', currentRoomId);
+            const ok = await copyText(url.toString());
+            showToast(ok ? "招待リンクをコピーしました！" : "コピーに失敗しました", ok ? "info" : "error");
+        });
+
+        leaveRoomBtn.addEventListener('click', () => {
+            stopTyping();
+            if (unsubscribeMessages) unsubscribeMessages();
+            if (unsubscribeTyping) unsubscribeTyping();
+            unsubscribeMessages = null;
+            unsubscribeTyping = null;
+            currentRoomId = null;
+
+            const url = new URL(window.location.href);
+            url.searchParams.delete('room');
+            window.history.pushState({}, '', url);
+
+            chatScreen.classList.add('hidden');
+            authScreen.classList.remove('hidden');
+            messagesContainer.innerHTML = "";
+            typingIndicator.classList.remove('opacity-100');
+            typingIndicator.classList.add('opacity-0');
+            showToast("退室しました");
+        });
+
+        // モジュールスクリプトはDOM解析後に実行されるので、そのまま1回だけ呼ぶ
+        init();
+    </script>
+</body>
+</html>
